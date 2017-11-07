@@ -52,66 +52,66 @@ $$
 
 // Начальное условие - ступенька
 double u0(double x) {
-	if (x > 0.4 && x < 0.6)
-		return 1;
-	return 0;
+    if (x > 0.4 && x < 0.6)
+        return 1;
+    return 0;
 }
 
 // Сохраняем содержимое массива в файл в формате gnuplot
 void save(const int M, const double h, const double *u, const std::string &filename) {
-	std::ofstream f(filename);
+    std::ofstream f(filename);
 
-	for (int m = 0; m < M; m++) {
-		double x = m*h;
-		f << x << " " << u[m] << "\n";
-	}
+    for (int m = 0; m < M; m++) {
+        double x = m*h;
+        f << x << " " << u[m] << "\n";
+    }
 }
 
 // Число узлов M задается аргументом программы при запуске
 int main(int argc, char **argv) {
-	if (argc < 2) {
-		std::cerr << "USAGE: ./main <M>" << std::endl;
-		return 1;
-	}
+    if (argc < 2) {
+        std::cerr << "USAGE: ./main <M>" << std::endl;
+        return 1;
+    }
 
-	const int M = atoi(argv[1]);
-	const double h = 1.0 / M; // Шаг по пространству
+    const int M = atoi(argv[1]);
+    const double h = 1.0 / M; // Шаг по пространству
 
-	// Массив u хранит значение u^n на текущем слое по времени
-	double *u     = new double[M];
-	// Массив unext хранит значение u^{n+1}
-	double *unext = new double[M];
+    // Массив u хранит значение u^n на текущем слое по времени
+    double *u     = new double[M];
+    // Массив unext хранит значение u^{n+1}
+    double *unext = new double[M];
 
-	// Заполняем начальное условие
-	for (int m = 0; m < M; m++) {
-		double x = m*h;
-		u[m] = u0(x);
-	}
+    // Заполняем начальное условие
+    for (int m = 0; m < M; m++) {
+        double x = m*h;
+        u[m] = u0(x);
+    }
 
-	const double tmax = 1;    // Конечный момент времени
-	double sigma = 0.5;
-	double dt = sigma * h;    // Этот шаг может не делить tmax нацело!
-	const int N = tmax / dt;  // Округляем tmax/dt вниз до целого
+    const double tmax = 1;    // Конечный момент времени
+    double sigma = 0.5;
+    double dt = sigma * h;    // Этот шаг может не делить tmax нацело!
+    const int N = tmax / dt;  // Округляем tmax/dt вниз до целого
 
-	dt = tmax / N;
-	sigma = dt / h;           // Корректируем dt и sigma
+    dt = tmax / N;
+    sigma = dt / h;           // Корректируем dt и sigma
 
 
-	// Делаем ровно N шагов
-	for (int n = 0; n < N; n++) {
-		for (int m = 1; m < M; m++)
-			unext[m] = (1 - sigma) * u[m] + sigma * u[m-1];
-		unext[0] = (1 - sigma) * u[0] + sigma * u[M-1];
+    // Делаем ровно N шагов
+    for (int n = 0; n < N; n++) {
+        for (int m = 1; m < M; m++)
+            unext[m] = (1 - sigma) * u[m] + sigma * u[m-1];
+        unext[0] = (1 - sigma) * u[0] + sigma * u[M-1];
 
-		std::swap(u, unext); // Меняем местами массивы
-	}
+        std::swap(u, unext); // Меняем местами массивы
+    }
 
-	save(M, h, u, "serial.csv");
+    save(M, h, u, "serial.csv");
 
-	delete[] u;
-	delete[] unext;
+    delete[] u;
+    delete[] unext;
 
-	return 0;
+    return 0;
 }
 ```
 
@@ -145,44 +145,44 @@ $$
 ...
 
 int main(int argc, char **argv) {
-	MPI_Init(&argc, &argv); // Включаем MPI
+    MPI_Init(&argc, &argv); // Включаем MPI
 
-	if (argc < 2) {
-		std::cerr << "USAGE: ./main <M>" << std::endl;
-		return 1;
-	}
+    if (argc < 2) {
+        std::cerr << "USAGE: ./main <M>" << std::endl;
+        return 1;
+    }
 
-	const int M = atoi(argv[1]);
+    const int M = atoi(argv[1]);
 
-	// Узнаем число процессов и номер каждого процесса
-	int size, rank;
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    // Узнаем число процессов и номер каждого процесса
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	// Эти вычисления продублированы всеми процессами
-	int Mi[size];
-	// Сначала раздаем всем поровну по M / size (округление вниз!)
-	for (int i = 0; i < size; i++)
-		Mi[i] = M / size;
-	// Первым M % size процессам добавляем по одному элементу
-	for (int i = 0; i < M % size; i++)
-		Mi[i]++;
+    // Эти вычисления продублированы всеми процессами
+    int Mi[size];
+    // Сначала раздаем всем поровну по M / size (округление вниз!)
+    for (int i = 0; i < size; i++)
+        Mi[i] = M / size;
+    // Первым M % size процессам добавляем по одному элементу
+    for (int i = 0; i < M % size; i++)
+        Mi[i]++;
 
-	// Каждый процесс вычисляет собственные mb и me
-	int mb, me;
-	mb = 0;
-	for (int i = 0; i < rank; i++)
-		mb += Mi[i];
-	me = mb + Mi[rank] - 1;
+    // Каждый процесс вычисляет собственные mb и me
+    int mb, me;
+    mb = 0;
+    for (int i = 0; i < rank; i++)
+        mb += Mi[i];
+    me = mb + Mi[rank] - 1;
 
-	std::cout << "Процесс " << rank << " обрабатывает элементы с "
-		<< mb << " до " << me << std::endl;
+    std::cout << "Процесс " << rank << " обрабатывает элементы с "
+        << mb << " до " << me << std::endl;
 
-	// Вычисления сейчас закомментированы
+    // Вычисления сейчас закомментированы
 
-	MPI_Finalize(); // Выключаем MPI
+    MPI_Finalize(); // Выключаем MPI
 
-	return 0;
+    return 0;
 }
 ```
 
@@ -211,66 +211,66 @@ int main(int argc, char **argv) {
 // Поправим save так, чтобы в файл записывалась только часть массива,
 // хранимая на данном процессе
 void save(const int mb, const int me, const double h, const double *u, const std::string &filename) {
-	std::ofstream f(filename);
+    std::ofstream f(filename);
 
-	for (int m = mb; m <= me; m++) {
-		double x = m*h;
-		f << x << " " << u[m] << "\n";
-	}
+    for (int m = mb; m <= me; m++) {
+        double x = m*h;
+        f << x << " " << u[m] << "\n";
+    }
 }
 
 int main(int argc, char **argv) {
-	MPI_Init(&argc, &argv); // Включаем MPI
+    MPI_Init(&argc, &argv); // Включаем MPI
 
-	if (argc < 2) {
-		std::cerr << "USAGE: ./main <M>" << std::endl;
-		return 1;
-	}
+    if (argc < 2) {
+        std::cerr << "USAGE: ./main <M>" << std::endl;
+        return 1;
+    }
 
-	const int M = atoi(argv[1]);
+    const int M = atoi(argv[1]);
 
-	// Узнаем число процессов и номер каждого процесса
-	int size, rank;
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    // Узнаем число процессов и номер каждого процесса
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	// Эти вычисления продублированы всеми процессами
-	int Mi[size];
-	// Сначала раздаем всем поровну по M / size (округление вниз!)
-	for (int i = 0; i < size; i++)
-		Mi[i] = M / size;
-	// Первым M % size процессам добавляем по одному элементу
-	for (int i = 0; i < M % size; i++)
-		Mi[i]++;
+    // Эти вычисления продублированы всеми процессами
+    int Mi[size];
+    // Сначала раздаем всем поровну по M / size (округление вниз!)
+    for (int i = 0; i < size; i++)
+        Mi[i] = M / size;
+    // Первым M % size процессам добавляем по одному элементу
+    for (int i = 0; i < M % size; i++)
+        Mi[i]++;
 
-	// Каждый процесс вычисляет собственные mb и me
-	int mb, me;
-	mb = 0;
-	for (int i = 0; i < rank; i++)
-		mb += Mi[i];
-	me = mb + Mi[rank] - 1;
+    // Каждый процесс вычисляет собственные mb и me
+    int mb, me;
+    mb = 0;
+    for (int i = 0; i < rank; i++)
+        mb += Mi[i];
+    me = mb + Mi[rank] - 1;
 
-	std::cout << "Процесс " << rank << " обрабатывает элементы с "
-		<< mb << " до " << me << std::endl;
+    std::cout << "Процесс " << rank << " обрабатывает элементы с "
+        << mb << " до " << me << std::endl;
 
-	double *u = new double[M];
-	double *unext = new double[M];
+    double *u = new double[M];
+    double *unext = new double[M];
 
-	for (int m = mb; m <= me; m++) {
-		double x = m*h;
-		u[m] = u0(x);
-	}
+    for (int m = mb; m <= me; m++) {
+        double x = m*h;
+        u[m] = u0(x);
+    }
 
-	// Вычисления сейчас закомментированы
+    // Вычисления сейчас закомментированы
 
-	save(mb, me, h, u, "par." + std::to_string(rank) + ".csv");
+    save(mb, me, h, u, "par." + std::to_string(rank) + ".csv");
 
-	delete[] u;
-	delete[] unext;
+    delete[] u;
+    delete[] unext;
 
-	MPI_Finalize(); // Выключаем MPI
+    MPI_Finalize(); // Выключаем MPI
 
-	return 0;
+    return 0;
 }
 ```
 
@@ -301,16 +301,16 @@ mpicxx -std=c++11 parallel.cpp -o parallel
 корректности пересылки (принято именно то сообщение, которое ожидалось).
 
 ```c++
-	// Вычисление номеров левого и правого соседа
-	int left = (rank > 0) ? rank - 1 : size - 1;
-	int right = (rank < size - 1) ? rank + 1 : 0;
+    // Вычисление номеров левого и правого соседа
+    int left = (rank > 0) ? rank - 1 : size - 1;
+    int right = (rank < size - 1) ? rank + 1 : 0;
 
-	// Переменная, в которую придет значение от левого процесса
-	double uleft; 
-	MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // Переменная, в которую придет значение от левого процесса
+    double uleft; 
+    MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-	// Отправляем правому процессу значение u[me]
-	MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
+    // Отправляем правому процессу значение u[me]
+    MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
 ```
 
 Добавим код пересылок и вернем код вычислений:
@@ -322,69 +322,69 @@ mpicxx -std=c++11 parallel.cpp -o parallel
 #include <mpi.h>
 
 double u0(double x) {
-	if (x > 0.4 && x < 0.6)
-		return 1;
-	return 0;
+    if (x > 0.4 && x < 0.6)
+        return 1;
+    return 0;
 }
 
 void save(const int mb, const int me, const double h, const double *u, const std::string &filename) {
-	std::ofstream f(filename);
+    std::ofstream f(filename);
 
-	for (int m = mb; m <= me; m++) {
-		double x = m*h;
-		f << x << " " << u[m] << "\n";
-	}
+    for (int m = mb; m <= me; m++) {
+        double x = m*h;
+        f << x << " " << u[m] << "\n";
+    }
 }
 
 int main(int argc, char **argv) {
-	MPI_Init(&argc, &argv);
+    MPI_Init(&argc, &argv);
 
-	if (argc < 2) {
-		std::cerr << "USAGE: ./main <M>" << std::endl;
-		return 1;
-	}
+    if (argc < 2) {
+        std::cerr << "USAGE: ./main <M>" << std::endl;
+        return 1;
+    }
 
-	const int M = atoi(argv[1]);
+    const int M = atoi(argv[1]);
     const double h = 1. / M;
 
-	int size, rank;
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	int Mi[size];
-	for (int i = 0; i < size; i++)
-		Mi[i] = M / size;
-	for (int i = 0; i < M % size; i++)
-		Mi[i]++;
+    int Mi[size];
+    for (int i = 0; i < size; i++)
+        Mi[i] = M / size;
+    for (int i = 0; i < M % size; i++)
+        Mi[i]++;
 
-	int mb, me;
-	mb = 0;
-	for (int i = 0; i < rank; i++)
-		mb += Mi[i];
-	me = mb + Mi[rank] - 1;
+    int mb, me;
+    mb = 0;
+    for (int i = 0; i < rank; i++)
+        mb += Mi[i];
+    me = mb + Mi[rank] - 1;
 
-	std::cout << "Процесс " << rank << " обрабатывает элементы с "
-		<< mb << " до " << me << std::endl;
+    std::cout << "Процесс " << rank << " обрабатывает элементы с "
+        << mb << " до " << me << std::endl;
 
-	double *u = new double[M];
-	double *unext = new double[M];
+    double *u = new double[M];
+    double *unext = new double[M];
 
-	for (int m = mb; m <= me; m++) {
-		double x = m*h;
-		u[m] = u0(x);
-	}
+    for (int m = mb; m <= me; m++) {
+        double x = m*h;
+        u[m] = u0(x);
+    }
 
-	const double tmax = 1;
-	double sigma = 0.5;
-	double dt = sigma * h;
-	const int N = tmax / dt;
-	dt = tmax / N;
-	sigma = dt / h;
+    const double tmax = 1;
+    double sigma = 0.5;
+    double dt = sigma * h;
+    const int N = tmax / dt;
+    dt = tmax / N;
+    sigma = dt / h;
 
-	for (int n = 0; n < N; n++) {
-		// Теперь цикл не от 1 до M-1, а от mb+1 до me
-		for (int m = mb+1; m <= me; m++)
-			unext[m] = (1 - sigma) * u[m] + sigma * u[m-1];
+    for (int n = 0; n < N; n++) {
+        // Теперь цикл не от 1 до M-1, а от mb+1 до me
+        for (int m = mb+1; m <= me; m++)
+            unext[m] = (1 - sigma) * u[m] + sigma * u[m-1];
 
         int left = (rank > 0) ? rank - 1 : size - 1;
         int right = (rank < size - 1) ? rank + 1 : 0;
@@ -395,17 +395,17 @@ int main(int argc, char **argv) {
 
         unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
 
-		std::swap(u, unext);
-	}
+        std::swap(u, unext);
+    }
 
-	save(mb, me, h, u, "par." + std::to_string(rank) + ".csv");
+    save(mb, me, h, u, "par." + std::to_string(rank) + ".csv");
 
-	delete[] u;
-	delete[] unext;
+    delete[] u;
+    delete[] unext;
 
-	MPI_Finalize(); // Выключаем MPI
+    MPI_Finalize(); // Выключаем MPI
 
-	return 0;
+    return 0;
 }
 ```
 
@@ -416,13 +416,13 @@ int main(int argc, char **argv) {
 будут бесконечно ждать, и ни один из них так и не дойдет до того, чтобы отправить сообщение. Чтобы снять эту блокировку,
 можно поменять последовательность отправки и приема: пусть все процессы сначала отправляют данные, а потом принимают:
 ```c++
-		...
-        double uleft;
-        MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
-        MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    ...
+    double uleft;
+    MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
+    MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
-		...
+    unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
+    ...
 ```
 После этого исправления код действительно работает и даже считает то, что нужно (проверьте!). Допустим, что задача
 запускалась на трех процессах. В результате запуска должно было образоваться три файла
@@ -447,12 +447,12 @@ gnuplot> plot 'par.csv'
 вызовы `MPI_Send` и `MPI_Recv` так, чтобы блокировки гарантированно не произошло. Эта функция принимает совокупность аргументов, переданных
 в отдельности `MPI_Send` и `MPI_Recv`:
 ```c++
-        double uleft;
-		MPI_Sendrecv(
-			&u[me], 1, MPI_DOUBLE, right, 1, // параметры Send
-			&uleft, 1, MPI_DOUBLE, left, 1,  // параметры Recv
-			MPI_COMM_WORLD, MPI_STATUS_IGNORE // общие параметры
-		);
+    double uleft;
+    MPI_Sendrecv(
+        &u[me], 1, MPI_DOUBLE, right, 1, // параметры Send
+        &uleft, 1, MPI_DOUBLE, left, 1,  // параметры Recv
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE // общие параметры
+    );
 
-		unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
+    unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
 ```
