@@ -292,6 +292,167 @@ mpicxx -std=c++11 parallel.cpp -o parallel
 `MPI_Send`, а процесс-приемник вызвал `MPI_Recv`. Учтем, что мы хотим написать универсальный код, который будет исполнен
 всеми процессами. Фиксированный процесс с номером `rank` должен поучаствовать в двух обменах: получить от левого соседа
 значение элемента `mb-1` и отправить правому соседу свое значение `me` (которое для правого соседа как-раз и будет его
-`mb-1` элементом).
+`mb-1` элементом). Заметим, что в такой схеме периодическое граничное условие естественным образом получается,
+если считать последний процесс левым соседом нулевого.
 
+Функции `MPI_Send/MPI_Recv` ориентированы на передачу целых массивов, так что для передачи одного числа необходмо
+использовать `&` (можно считать, что `&x` --- массив из одного элемента, содержащий значение `x`). При использовании
+функций MPI можно сообщениям присваивать дополнительный идентификатор `tag`. В основном, он служит для проверки
+корректности пересылки (принято именно то сообщение, которое ожидалось).
 
+```c++
+	// Вычисление номеров левого и правого соседа
+	int left = (rank > 0) ? rank - 1 : size - 1;
+	int right = (rank < size - 1) ? rank + 1 : 0;
+
+	// Переменная, в которую придет значение от левого процесса
+	double uleft; 
+	MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+	// Отправляем правому процессу значение u[me]
+	MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
+```
+
+Добавим код пересылок и вернем код вычислений:
+```c++
+#include <algorithm>
+#include <iostream>
+#include <cstdlib>
+#include <fstream>
+#include <mpi.h>
+
+double u0(double x) {
+	if (x > 0.4 && x < 0.6)
+		return 1;
+	return 0;
+}
+
+void save(const int mb, const int me, const double h, const double *u, const std::string &filename) {
+	std::ofstream f(filename);
+
+	for (int m = mb; m <= me; m++) {
+		double x = m*h;
+		f << x << " " << u[m] << "\n";
+	}
+}
+
+int main(int argc, char **argv) {
+	MPI_Init(&argc, &argv);
+
+	if (argc < 2) {
+		std::cerr << "USAGE: ./main <M>" << std::endl;
+		return 1;
+	}
+
+	const int M = atoi(argv[1]);
+    const double h = 1. / M;
+
+	int size, rank;
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+	int Mi[size];
+	for (int i = 0; i < size; i++)
+		Mi[i] = M / size;
+	for (int i = 0; i < M % size; i++)
+		Mi[i]++;
+
+	int mb, me;
+	mb = 0;
+	for (int i = 0; i < rank; i++)
+		mb += Mi[i];
+	me = mb + Mi[rank] - 1;
+
+	std::cout << "Процесс " << rank << " обрабатывает элементы с "
+		<< mb << " до " << me << std::endl;
+
+	double *u = new double[M];
+	double *unext = new double[M];
+
+	for (int m = mb; m <= me; m++) {
+		double x = m*h;
+		u[m] = u0(x);
+	}
+
+	const double tmax = 1;
+	double sigma = 0.5;
+	double dt = sigma * h;
+	const int N = tmax / dt;
+	dt = tmax / N;
+	sigma = dt / h;
+
+	for (int n = 0; n < N; n++) {
+		// Теперь цикл не от 1 до M-1, а от mb+1 до me
+		for (int m = mb+1; m <= me; m++)
+			unext[m] = (1 - sigma) * u[m] + sigma * u[m-1];
+
+        int left = (rank > 0) ? rank - 1 : size - 1;
+        int right = (rank < size - 1) ? rank + 1 : 0;
+
+        double uleft;
+        MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
+
+        unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
+
+		std::swap(u, unext);
+	}
+
+	save(mb, me, h, u, "par." + std::to_string(rank) + ".csv");
+
+	delete[] u;
+	delete[] unext;
+
+	MPI_Finalize(); // Выключаем MPI
+
+	return 0;
+}
+```
+
+Компилируем этот код, запускаем и ... обнаруживаем, что он просто висит. Если вы запускали задачу на кластере,
+она будет либо убита по истечении времени, либо необходимо удалить её из очереди счета вручную.
+
+Дело в том, что все процессы одновременно начинают ожидать получения сообщения от соседа. В данной ситуации процессы
+будут бесконечно ждать, и ни один из них так и не дойдет до того, чтобы отправить сообщение. Чтобы снять эту блокировку,
+можно поменять последовательность отправки и приема: пусть все процессы сначала отправляют данные, а потом принимают:
+```c++
+		...
+        double uleft;
+        MPI_Send(&u[me], 1, MPI_DOUBLE, right, 1, MPI_COMM_WORLD);
+        MPI_Recv(&uleft, 1, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
+		...
+```
+После этого исправления код действительно работает и даже считает то, что нужно (проверьте!). Допустим, что задача
+запускалась на трех процессах. В результате запуска должно было образоваться три файла
+```bash
+[v.pupkin@head ~/advection] ls par.*.csv
+par.0.csv  par.1.csv  par.2.csv
+```
+Склеим эти файлы в один файл `par.csv` и откроем его в gnuplot:
+```bash
+[v.pupkin@head ~/advection] cat par.*.csv > par.csv
+[v.pupkin@head ~/advection] gnuplot
+gnuplot> plot 'par.csv'
+```
+Однако, хотя такой код и работает, он не очень надежен. Функция `MPI_Send`, в отличие от `MPI_Recv`, может закончить свою работу
+еще до того, как сообщение будет принято на той стороне. Само сообщение при этом хранится в буфферах библиотеки MPI.
+Если этого буффера не хватит (размер зависит от используемой конкретной библиотеки), функция `MPI_Send` будет ожидать в точности так же,
+как и `MPI_Recv`.
+
+Для решения этой проблемы необходимо гарантировать, что часть процессов начнут обмен данными с отправки, а часть --- с приёма сообщений.
+Это можно реализовать самостоятельно, чередуя `MPI_Send/MPI_Recv` в зависимости от номера процесса `rank`, но гораздо лучше поручить
+эту задачу библиотеке MPI: функция `MPI_Sendrecv` предназначена именно для этих целей: она позволяет объединить последовательнные
+вызовы `MPI_Send` и `MPI_Recv` так, чтобы блокировки гарантированно не произошло. Эта функция принимает совокупность аргументов, переданных
+в отдельности `MPI_Send` и `MPI_Recv`:
+```c++
+        double uleft;
+		MPI_Sendrecv(
+			&u[me], 1, MPI_DOUBLE, right, 1, // параметры Send
+			&uleft, 1, MPI_DOUBLE, left, 1,  // параметры Recv
+			MPI_COMM_WORLD, MPI_STATUS_IGNORE // общие параметры
+		);
+
+		unext[mb] = (1 - sigma) * u[mb] + sigma * uleft;
+```
