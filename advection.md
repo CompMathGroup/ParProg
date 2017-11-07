@@ -114,6 +114,13 @@ int main(int argc, char **argv) {
 	return 0;
 }
 ```
+
+Решение можно посмотреть с помощью программы `gnuplot`. Для этого нужно её запустить и ввести команду
+```
+gnuplot> plot 'serial.csv'
+```
+Для выхода из программы можно нажать `Ctrl+D`.
+
 # Разбиение области
 
 Разобьем работу по вычислению $$M$$ значений с $$n+1$$ слоя по времени между процессами. Условимся разделить данные «честно»,
@@ -153,7 +160,7 @@ int main(int argc, char **argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
 	// Эти вычисления продублированы всеми процессами
-	const int Mi[size];
+	int Mi[size];
 	// Сначала раздаем всем поровну по M / size (округление вниз!)
 	for (int i = 0; i < size; i++)
 		Mi[i] = M / size;
@@ -228,7 +235,7 @@ int main(int argc, char **argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
 	// Эти вычисления продублированы всеми процессами
-	const int Mi[size];
+	int Mi[size];
 	// Сначала раздаем всем поровну по M / size (округление вниз!)
 	for (int i = 0; i < size; i++)
 		Mi[i] = M / size;
