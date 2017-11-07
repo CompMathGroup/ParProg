@@ -18,4 +18,6 @@ $$
 &\frac{u^{n+1}_0 - u^n_0}{\tau} + \frac{u^n_0 - u^n_{M-1}}{h} = 0, &\quad m = 0\\ &u^0_m = u_0(x_m), &\qquad m = 0, \dots, M-1 \end{aligned}
 $$
 
+Да ладно $$E = mc^2$$
+
 # Последовательная программа
