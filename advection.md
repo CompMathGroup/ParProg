@@ -61,7 +61,7 @@ double u0(double x) {
 void save(const int M, const double h, const double *u, const std::string &filename) {
 	std::ofstream f(filename);
 
-	for (int m = 0; m < M; i++) {
+	for (int m = 0; m < M; m++) {
 		double x = m*h;
 		f << x << " " << u[m] << "\n";
 	}
@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
 	}
 
 	const int M = atoi(argv[1]);
+	const double h = 1.0 / M; // Шаг по пространству
 
 	// Массив u хранит значение u^n на текущем слое по времени
 	double *u     = new double[M];
@@ -87,13 +88,13 @@ int main(int argc, char **argv) {
 		u[m] = u0(x);
 	}
 
-	const double tmax = 1;   // Конечный момент времени
+	const double tmax = 1;    // Конечный момент времени
 	double sigma = 0.5;
-	double dt = sigma * h;   // Этот шаг может не делить tmax нацело!
-	const int N = tmax / dt; // Округляем tmax/dt вниз до целого
+	double dt = sigma * h;    // Этот шаг может не делить tmax нацело!
+	const int N = tmax / dt;  // Округляем tmax/dt вниз до целого
 
 	dt = tmax / N;
-	sigma = dt / h;          // Корректируем dt и sigma
+	sigma = dt / h;           // Корректируем dt и sigma
 
 
 	// Делаем ровно N шагов
@@ -112,4 +113,74 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+```
+# Разбиение области
+
+Разобьем работу по вычислению $$M$$ значений с $$n+1$$ слоя по времени между процессами. Условимся разделить данные «честно»,
+то есть так, чтобы число элементов у разных процессов отличалось не более, чем на один.
+
+Пусть процессы занумерованы от $$0$$ до $$P-1$$. Следующая формула задает требуемое разбиение
+$$
+M_i = \left\lfloor\frac{M}{P}\right\rfloor + \begin{cases}
+1, &i < \operatorname{mod}(M, P)\\
+0, &i \geqslant \operatorname{mod}(M, P)
+\end{cases}
+$$
+
+Введем на каждом процессе переменные `mb` и `me` означающие начало и конец его блока соответственно. Добавим необходимый MPI код:
+
+```c++
+...
+
+#include <mpi.h>  // К заголовочным файлам добавляем mpi.h
+
+...
+
+int main(int argc, char **argv) {
+	MPI_Init(&argc, &argv); // Включаем MPI
+
+	if (argc < 2) {
+		std::cerr << "USAGE: ./main <M>" << std::endl;
+		return 1;
+	}
+
+	const int M = atoi(argv[1]);
+
+	// Узнаем число процессов и номер каждого процесса
+	int size, rank;
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+	// Эти вычисления продублированы всеми процессами
+	const int Mi[size];
+	// Сначала раздаем всем поровну по M / size (округление вниз!)
+	for (int i = 0; i < size; i++)
+		Mi[i] = M / size;
+	// Первым M % size процессам добавляем по одному элементу
+	for (int i = 0; i < M % size; i++)
+		Mi[i]++;
+
+	// Каждый процесс вычисляет собственные mb и me
+	int mb, me;
+	mb = 0;
+	for (int i = 0; i < rank; i++)
+		mb += Mi[i];
+	me = mb + Mi[rank] - 1;
+
+	std::cout << "Процесс " << rank << " обрабатывает элементы с "
+		<< mb << " до " << me << std::endl;
+
+	// Вычисления сейчас закомментированы
+
+	MPI_Finalize(); // Выключаем MPI
+
+	return 0;
+}
+```
+
+Компилируем этот код с помощью компилятора `mpicxx`, запускаем его на трех процессах и получаем вывод
+```
+Процесс 0 обрабатывает элементы с 0 до 66
+Процесс 1 обрабатывает элементы с 67 до 133
+Процесс 2 обрабатывает элементы с 134 до 199
 ```
